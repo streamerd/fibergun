@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GunDB + Fiber Example</title>
+    <!-- Previous CSS styles remain the same -->
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -73,11 +74,34 @@
             color: #666;
             margin-left: 10px;
         }
+        .message-state {
+            font-size: 0.8em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+        }
+        .message-state.sending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .message-state.sent {
+            background: #d4edda;
+            color: #155724;
+        }
+        .message-state.received {
+            background: #cce5ff;
+            color: #004085;
+        }
+        .message-state.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
         #status {
             padding: 10px;
             margin: 10px 0;
             border-radius: 4px;
             font-weight: bold;
+            transition: all 0.3s ease;
         }
         .connected {
             background-color: #d4edda;
@@ -88,6 +112,11 @@
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+        .connecting {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
         }
         .debug {
             font-family: monospace;
@@ -127,9 +156,10 @@
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 </head>
 <body>
+    <!-- Previous HTML structure remains the same -->
     <div class="container">
         <h1>GunDB + Fiber Example</h1>
-        <div id="status" class="disconnected">Connecting to GunDB...</div>
+        <div id="status" class="connecting">Initializing connection...</div>
 
         <div class="message-form">
             <h3>Send a Message</h3>
@@ -140,7 +170,6 @@
 
         <div class="messages" id="messages">
             <h3>Messages</h3>
-            <!-- Messages will be inserted here -->
         </div>
 
         <div class="debug-controls">
@@ -157,12 +186,13 @@
     </div>
 
     <script>
-        // Initialize Gun with the WebSocket peer and options
+        // Initialize Gun with optimized configuration
         const gun = GUN({
             peers: [`ws://${window.location.host}/gun`],
-            localStorage: true, // Enable localStorage for persistence
+            localStorage: true,
             debug: true,
-            axe: false // Disable AXE networking protocol for simpler peer connections
+            axe: false,
+            retry: 1000
         });
 
         // Get DOM elements
@@ -173,12 +203,21 @@
         const debugContent = document.getElementById('debugContent');
 
         // Create a reference to our messages
-        const messages = gun.get('messages');
+        const messages = gun.get('chat');
 
-        // Message state tracking
+        // State management
         const messageStates = new Map();
+        let connectionAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        let connectionVerified = false;
 
         function sendMessage() {
+            if (!isConnected()) {
+                log('Warning: Not connected to GunDB');
+                alert('Not connected to GunDB. Please wait for connection to be established.');
+                return;
+            }
+
             const name = nameInput.value.trim() || 'Anonymous';
             const text = messageInput.value.trim();
             
@@ -196,11 +235,12 @@
             };
 
             log('Sending message:', message);
-
-            // Track message state
             messageStates.set(messageId, 'sending');
 
-            // Send message with acknowledgment
+            // Create message element immediately
+            createMessageElement(messageId, message);
+
+            // Put the message in the chat path
             messages.get(messageId).put(message, ack => {
                 if (ack.err) {
                     log('Error sending message:', ack.err);
@@ -209,58 +249,67 @@
                     log('Message acknowledged:', messageId);
                     messageStates.set(messageId, 'sent');
                 }
+                updateMessageUI(messageId, message);
             });
 
             messageInput.value = '';
         }
 
-        // Listen for new messages
-        messages.map().on((data, key) => {
-            if (!data || !data.timestamp) return;
-            log('Received message:', { key, data });
-            
+        function createMessageElement(msgId, data) {
             // Check if message already exists
-            const existingMsg = document.getElementById(`msg-${key}`);
-            if (existingMsg) {
-                // Update existing message if needed
-                if (existingMsg.dataset.timestamp !== data.timestamp.toString()) {
-                    existingMsg.innerHTML = createMessageHTML(data);
-                    existingMsg.dataset.timestamp = data.timestamp;
-                }
-                return;
+            let msgDiv = document.getElementById(`msg-${msgId}`);
+            
+            if (!msgDiv) {
+                msgDiv = document.createElement('div');
+                msgDiv.id = `msg-${msgId}`;
+                msgDiv.className = 'message';
+                messagesDiv.appendChild(msgDiv);
             }
 
-            // Create new message element
-            const msgDiv = document.createElement('div');
-            msgDiv.id = `msg-${key}`;
-            msgDiv.className = 'message';
             msgDiv.dataset.timestamp = data.timestamp;
-            msgDiv.innerHTML = createMessageHTML(data);
+            Object.assign(msgDiv.dataset, data);
+            updateMessageUI(msgId, data);
             
-            // Add to messages container
-            messagesDiv.appendChild(msgDiv);
+            // Scroll to bottom
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        });
+        }
 
-        function createMessageHTML(data) {
-            const time = new Date(data.timestamp).toLocaleTimeString();
-            const state = messageStates.get(data.id) || 'received';
+        function updateMessageUI(messageId, data) {
+            const msgElement = document.getElementById(`msg-${messageId}`);
+            if (msgElement) {
+                const state = messageStates.get(messageId) || 'received';
+                msgElement.innerHTML = createMessageHTML(data, state);
+            }
+        }
+
+        function createMessageHTML(data, state) {
+            const time = new Date(Number(data.timestamp)).toLocaleTimeString();
             return `
                 <strong>${escapeHTML(data.name)}</strong>: ${escapeHTML(data.text)}
-                <small>(${time}) - ${state}</small>
+                <small>(${time})</small>
+                <span class="message-state ${state}">${state}</span>
             `;
         }
 
+        // Listen for messages
+        messages.map().on((data, key) => {
+            if (!data || !data.timestamp) return;
+            log('Received message:', { key, data });
+            createMessageElement(key, data);
+        });
+
+        // Keep the rest of the utility functions and event listeners as they are
         function escapeHTML(str) {
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
         }
 
-        // Connection status monitoring
         gun.on('hi', peer => {
+            connectionVerified = true;
+            connectionAttempts = 0;
             log('Peer connected:', peer);
-            status.textContent = 'Connected to GunDB';
+            status.textContent = `Connected to GunDB (${peer.url || 'local'})`;
             status.className = 'connected';
         });
 
@@ -268,18 +317,32 @@
             log('Peer disconnected:', peer);
             status.textContent = 'Disconnected from GunDB';
             status.className = 'disconnected';
+            
+            if (connectionAttempts < MAX_RECONNECT_ATTEMPTS) {
+                connectionAttempts++;
+                retryConnection();
+            }
         });
 
-        // Monitor GunDB operations
-        gun.on('put', data => {
-            log('PUT operation:', data);
-        });
+        function retryConnection() {
+            if (!isConnected()) {
+                log('Retrying connection...');
+                status.textContent = `Reconnecting (attempt ${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})...`;
+                status.className = 'connecting';
+                gun.opt({ peers: [`ws://${window.location.host}/gun`] });
+            }
+        }
 
-        gun.on('get', data => {
-            log('GET operation:', data);
-        });
+        setInterval(() => {
+            if (!connectionVerified) {
+                retryConnection();
+            }
+        }, 5000);
 
-        // Debug logging
+        function isConnected() {
+            return status.className === 'connected' && connectionVerified;
+        }
+
         function log(...args) {
             const timestamp = new Date().toISOString();
             const logEntry = `${timestamp}\n${JSON.stringify(args, null, 2)}`;
@@ -297,7 +360,6 @@
             debugContent.textContent = '';
         }
 
-        // Handle Enter key in message input
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -305,19 +367,29 @@
             }
         });
 
-        // Restore name from localStorage if available
         const savedName = localStorage.getItem('gundb-username');
         if (savedName) {
             nameInput.value = savedName;
         }
 
-        // Save name to localStorage when changed
         nameInput.addEventListener('change', (e) => {
             localStorage.setItem('gundb-username', e.target.value);
         });
 
-        // Log initial connection attempt
-        log('Initializing GunDB connection...');
+        gun.on('put', data => {
+            log('PUT operation:', data);
+            connectionVerified = true;
+        });
+
+        gun.on('get', data => {
+            log('GET operation:', data);
+            connectionVerified = true;
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Initializing GunDB connection...');
+            retryConnection();
+        });
     </script>
 </body>
 </html>
