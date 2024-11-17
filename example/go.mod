@@ -3,11 +3,10 @@ module example
 go 1.22.4
 
 require (
-	github.com/gofiber/contrib/fibergun v0.0.0-00010101000000-000000000000
+	github.com/streamerd/fibergun v1.0.0
 	github.com/gofiber/fiber/v2 v2.52.5
 )
 
-replace github.com/gofiber/contrib/fibergun => ../
 
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect

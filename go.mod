@@ -1,4 +1,4 @@
-module github.com/gofiber/contrib/fibergun
+module github.com/streamerd/fibergun
 
 go 1.22.4
 

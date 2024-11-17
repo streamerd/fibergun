@@ -4,10 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/gofiber/contrib/fibergun"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/streamerd/fibergun"
 )
 
 func main() {

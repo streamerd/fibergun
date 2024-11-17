@@ -1,7 +1,7 @@
 # Fiber GunDB Middleware
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/gofiber/contrib/fibergun.svg)](https://pkg.go.dev/github.com/gofiber/contrib/fibergun)
-[![Go Report Card](https://goreportcard.com/badge/github.com/gofiber/contrib/fibergun)](https://goreportcard.com/report/github.com/gofiber/contrib/fibergun)
+[![Go Reference](https://pkg.go.dev/badge/github.com/streamerd/fibergun.svg)](https://pkg.go.dev/github.com/streamerd/fibergun)
+[![Go Report Card](https://goreportcard.com/badge/github.com/streamerd/fibergun)](https://goreportcard.com/report/github.com/streamerd/fibergun)
 
 GunDB middleware for [Fiber](https://github.com/gofiber/fiber) web framework. This middleware enables easy integration of [GunDB](https://gun.eco/), a decentralized database, with your Fiber applications.
 
@@ -11,7 +11,7 @@ This middleware supports Fiber v2.
 
 ```bash
 go get -u github.com/gofiber/fiber/v2
-go get -u github.com/gofiber/contrib/fibergun
+go get -u github.com/streamerd/fibergun
 ```
 
 ## Signature
@@ -60,7 +60,7 @@ import (
     "github.com/gofiber/fiber/v2"
     "github.com/gofiber/fiber/v2/middleware/cors"
     "github.com/gofiber/fiber/v2/middleware/logger"
-    "github.com/gofiber/contrib/fibergun"
+    "github.com/streamerd/fibergun"
 )
 
 func main() {
