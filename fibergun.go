@@ -105,16 +105,37 @@ func (g *GunDB) cleanupInactivePeers() {
 	for range ticker.C {
 		now := time.Now()
 		g.peers.Range(func(key, value interface{}) bool {
-			peer := value.(*PeerConnection)
-			if !peer.Active || now.Sub(peer.LastSeen) > g.config.PeerTimeout {
-				log.Printf("Cleaning up inactive peer: %s", peer.ID)
-				g.peers.Delete(key)
-				peer.Conn.Close()
+			if peer, ok := value.(*PeerConnection); ok {
+				if !peer.Active || now.Sub(peer.LastSeen) > g.config.PeerTimeout {
+					log.Printf("Cleaning up inactive peer: %s", peer.ID)
+					g.peers.Delete(key)
+					if peer.Conn != nil {
+						peer.Conn.Close()
+					}
+				}
 			}
 			return true
 		})
 	}
 }
+
+// func (g *GunDB) cleanupInactivePeers() {
+// 	ticker := time.NewTicker(g.config.HeartbeatInterval)
+// 	defer ticker.Stop()
+
+// 	for range ticker.C {
+// 		now := time.Now()
+// 		g.peers.Range(func(key, value interface{}) bool {
+// 			peer := value.(*PeerConnection)
+// 			if !peer.Active || now.Sub(peer.LastSeen) > g.config.PeerTimeout {
+// 				log.Printf("Cleaning up inactive peer: %s", peer.ID)
+// 				g.peers.Delete(key)
+// 				peer.Conn.Close()
+// 			}
+// 			return true
+// 		})
+// 	}
+// }
 
 func (g *GunDB) handleWebSocket() func(*websocket.Conn) {
 	return func(c *websocket.Conn) {
@@ -300,11 +321,23 @@ func (g *GunDB) handleGet(peer *PeerConnection, msg *GunMessage) {
 	}
 }
 
+// func (g *GunDB) sendJSON(c *websocket.Conn, data interface{}) {
+// 	if msg, err := json.Marshal(data); err == nil {
+// 		if err := c.WriteMessage(websocket.TextMessage, msg); err != nil {
+// 			log.Printf("Error sending JSON: %v", err)
+// 		}
+// 	}
+// }
+
 func (g *GunDB) sendJSON(c *websocket.Conn, data interface{}) {
-	if msg, err := json.Marshal(data); err == nil {
-		if err := c.WriteMessage(websocket.TextMessage, msg); err != nil {
-			log.Printf("Error sending JSON: %v", err)
+	if c != nil {
+		if msg, err := json.Marshal(data); err == nil {
+			if err := c.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Printf("Error sending JSON: %v", err)
+			}
 		}
+	} else {
+		log.Println("sendJSON called with nil websocket.Conn")
 	}
 }
 
