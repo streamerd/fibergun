@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GunDB + Fiber Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .message-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .message-form input,
+        .message-form textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .message-form textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .message-form button {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .message-form button:hover {
+            background-color: #0056b3;
+        }
+        .messages {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 4px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            background-color: white;
+        }
+        .message {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+        }
+        .message small {
+            color: #666;
+            margin-left: 10px;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .debug {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+        .debug pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .debug-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .debug-controls button {
+            padding: 5px 10px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .debug-controls button:hover {
+            background-color: #5a6268;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>GunDB + Fiber Example</h1>
+        <div id="status" class="disconnected">Connecting to GunDB...</div>
+
+        <div class="message-form">
+            <h3>Send a Message</h3>
+            <input type="text" id="nameInput" placeholder="Your name" />
+            <textarea id="messageInput" placeholder="Type your message"></textarea>
+            <button onclick="sendMessage()">Send Message</button>
+        </div>
+
+        <div class="messages" id="messages">
+            <h3>Messages</h3>
+            <!-- Messages will be inserted here -->
+        </div>
+
+        <div class="debug-controls">
+            <label>
+                <input type="checkbox" onchange="toggleDebug()"> Show Debug Info
+            </label>
+            <button onclick="clearDebugLog()">Clear Debug Log</button>
+        </div>
+
+        <div class="debug" id="debug">
+            <h4>Debug Info</h4>
+            <pre id="debugContent"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Gun with the WebSocket peer and options
+        const gun = GUN({
+            peers: [`ws://${window.location.host}/gun`],
+            localStorage: true, // Enable localStorage for persistence
+            debug: true,
+            axe: false // Disable AXE networking protocol for simpler peer connections
+        });
+
+        // Get DOM elements
+        const status = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        const nameInput = document.getElementById('nameInput');
+        const messageInput = document.getElementById('messageInput');
+        const debugContent = document.getElementById('debugContent');
+
+        // Create a reference to our messages
+        const messages = gun.get('messages');
+
+        // Message state tracking
+        const messageStates = new Map();
+
+        function sendMessage() {
+            const name = nameInput.value.trim() || 'Anonymous';
+            const text = messageInput.value.trim();
+            
+            if (!text) {
+                log('Warning: Empty message not sent');
+                return;
+            }
+
+            const messageId = Date.now().toString();
+            const message = {
+                name: name,
+                text: text,
+                timestamp: Date.now(),
+                id: messageId
+            };
+
+            log('Sending message:', message);
+
+            // Track message state
+            messageStates.set(messageId, 'sending');
+
+            // Send message with acknowledgment
+            messages.get(messageId).put(message, ack => {
+                if (ack.err) {
+                    log('Error sending message:', ack.err);
+                    messageStates.set(messageId, 'error');
+                } else {
+                    log('Message acknowledged:', messageId);
+                    messageStates.set(messageId, 'sent');
+                }
+            });
+
+            messageInput.value = '';
+        }
+
+        // Listen for new messages
+        messages.map().on((data, key) => {
+            if (!data || !data.timestamp) return;
+            log('Received message:', { key, data });
+            
+            // Check if message already exists
+            const existingMsg = document.getElementById(`msg-${key}`);
+            if (existingMsg) {
+                // Update existing message if needed
+                if (existingMsg.dataset.timestamp !== data.timestamp.toString()) {
+                    existingMsg.innerHTML = createMessageHTML(data);
+                    existingMsg.dataset.timestamp = data.timestamp;
+                }
+                return;
+            }
+
+            // Create new message element
+            const msgDiv = document.createElement('div');
+            msgDiv.id = `msg-${key}`;
+            msgDiv.className = 'message';
+            msgDiv.dataset.timestamp = data.timestamp;
+            msgDiv.innerHTML = createMessageHTML(data);
+            
+            // Add to messages container
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        function createMessageHTML(data) {
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const state = messageStates.get(data.id) || 'received';
+            return `
+                <strong>${escapeHTML(data.name)}</strong>: ${escapeHTML(data.text)}
+                <small>(${time}) - ${state}</small>
+            `;
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Connection status monitoring
+        gun.on('hi', peer => {
+            log('Peer connected:', peer);
+            status.textContent = 'Connected to GunDB';
+            status.className = 'connected';
+        });
+
+        gun.on('bye', peer => {
+            log('Peer disconnected:', peer);
+            status.textContent = 'Disconnected from GunDB';
+            status.className = 'disconnected';
+        });
+
+        // Monitor GunDB operations
+        gun.on('put', data => {
+            log('PUT operation:', data);
+        });
+
+        gun.on('get', data => {
+            log('GET operation:', data);
+        });
+
+        // Debug logging
+        function log(...args) {
+            const timestamp = new Date().toISOString();
+            const logEntry = `${timestamp}\n${JSON.stringify(args, null, 2)}`;
+            console.log(...args);
+            debugContent.textContent = logEntry + '\n\n' + debugContent.textContent;
+            debugContent.scrollTop = 0;
+        }
+
+        function toggleDebug() {
+            const debug = document.getElementById('debug');
+            debug.style.display = debug.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function clearDebugLog() {
+            debugContent.textContent = '';
+        }
+
+        // Handle Enter key in message input
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Restore name from localStorage if available
+        const savedName = localStorage.getItem('gundb-username');
+        if (savedName) {
+            nameInput.value = savedName;
+        }
+
+        // Save name to localStorage when changed
+        nameInput.addEventListener('change', (e) => {
+            localStorage.setItem('gundb-username', e.target.value);
+        });
+
+        // Log initial connection attempt
+        log('Initializing GunDB connection...');
+    </script>
+</body>
+</html>
