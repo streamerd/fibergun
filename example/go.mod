@@ -3,10 +3,9 @@ module example
 go 1.22.4
 
 require (
-	github.com/streamerd/fibergun v1.0.0
 	github.com/gofiber/fiber/v2 v2.52.5
+	github.com/streamerd/fibergun v0.1.0
 )
-
 
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
